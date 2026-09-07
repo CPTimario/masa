@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
@@ -8,9 +9,10 @@ import { CATEGORIES } from '@/lib/categories'
 import { format, eachDayOfInterval, parseISO } from 'date-fns'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { ResponsiveFormModal } from '@/components/ui/responsive-form-modal'
+import { TripForm } from '@/components/trips/TripForm'
 import { MobilePageHeader } from '@/components/shell/MobilePageHeader'
-import { Receipt, Users, Wallet, DollarSign, TrendingDown, TrendingUp, Minus } from 'lucide-react'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Receipt, Users, Wallet, DollarSign, TrendingDown, TrendingUp, Minus, Pencil } from 'lucide-react'
 import { SectionHeader } from '@/components/ui/section-header'
 import type { Trip, Member, Expense, ExpenseSplit, Settlement, Transfer } from '@/lib/db/schema'
 import { computeBalances } from '@/lib/settlement'
@@ -26,6 +28,8 @@ interface Props {
 }
 
 export function TripDashboard({ trip, members: rawMembers, expenses, expenseSplits, settlements, transfers }: Props) {
+  const router = useRouter()
+  const [editOpen, setEditOpen] = useState(false)
   const members = useMemo(() => [...rawMembers].sort((a, b) => (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0)), [rawMembers])
   const totalBudget = useMemo(() => members.reduce((sum, m) => sum + parseFloat(m.initialBudget || '0'), 0), [members])
   const totalSpent = useMemo(() => expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0), [expenses])
@@ -92,7 +96,7 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
   , [members, expenses, expenseSplits, balances])
 
   const budgetPct = totalBudget > 0 ? Math.min(100, (totalSpent / totalBudget) * 100) : 0
-  const isEmpty = members.length === 0 && expenses.length === 0
+  const isEmpty = members.length === 0
 
   const statCards = [
     {
@@ -130,9 +134,20 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
     <>
       <MobilePageHeader title={trip.name} backHref="/trips" />
       <div className="p-4 md:p-6 space-y-5 md:space-y-6">
-        <div>
-          <h1 className="hidden md:block text-2xl font-bold tracking-tight">{trip.name}</h1>
-          <p className="text-muted-foreground text-sm">{trip.destination}</p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="hidden md:block text-2xl font-bold tracking-tight">{trip.name}</h1>
+            <p className="text-muted-foreground text-sm">{trip.destination}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Edit trip"
+            className="text-muted-foreground hover:text-foreground shrink-0"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -175,28 +190,53 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
         )}
 
         {isEmpty ? (
-          <EmptyState
-            icon={Users}
-            heading="No members yet"
-            body="Start by adding your trip members"
-            action={{ label: 'Add Members', onClick: () => window.location.href = `/trips/${trip.id}/members` }}
-          />
+          <Card className="border-border">
+            <CardContent className="py-8 px-6 space-y-6">
+              <div className="space-y-1 text-center">
+                <h2 className="text-lg font-semibold">🗺️ Let&apos;s set up your trip</h2>
+                <p className="text-sm text-muted-foreground">Two quick steps to get started tracking expenses.</p>
+              </div>
+              <div className="space-y-4 max-w-md mx-auto">
+                <div className="flex items-center gap-4">
+                  <span className="h-8 w-8 shrink-0 bg-primary/10 text-primary rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">Add travel companions</p>
+                    <p className="text-xs text-muted-foreground">Invite the people sharing this trip.</p>
+                  </div>
+                  <Link href={`/trips/${trip.id}/people`}>
+                    <Button size="sm">Go to People</Button>
+                  </Link>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="h-8 w-8 shrink-0 bg-primary/10 text-primary rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">Log your first expense</p>
+                    <p className="text-xs text-muted-foreground">Start recording what you spend.</p>
+                  </div>
+                  <Link href={`/trips/${trip.id}/expenses`}>
+                    <Button size="sm" variant="outline">Go to Expenses</Button>
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <>
             {memberSummaries.length > 0 && (
               <div className="space-y-3">
-                <SectionHeader title="Members" />
+                <SectionHeader title="People" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {memberSummaries.map(({ member, consumed, balance: rawBalance }) => {
                     const balance = Math.round(rawBalance * 100) / 100
                     const budget = parseFloat(member.initialBudget || '0')
                     const consumedPct = budget > 0 ? Math.min(100, (consumed / budget) * 100) : 0
                     return (
-                      <Link key={member.id} href={`/trips/${trip.id}/members/${member.id}`}>
+                      <Link key={member.id} href={`/trips/${trip.id}/people/${member.id}`}>
                         <Card className="hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer border-border">
                           <CardContent className="pt-4 pb-3 px-4">
                             <div className="flex items-center gap-3 mb-3">
                               <div
+                                aria-hidden
                                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ring-2 ring-white dark:ring-card"
                                 style={{ backgroundColor: member.color }}
                               >
@@ -242,11 +282,11 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
               <Link href={`/trips/${trip.id}/expenses`}>
                 <Button variant="outline" size="sm" className="gap-2"><Receipt className="h-4 w-4" />Expenses</Button>
               </Link>
-              <Link href={`/trips/${trip.id}/members`}>
-                <Button variant="outline" size="sm" className="gap-2"><Users className="h-4 w-4" />Members</Button>
+              <Link href={`/trips/${trip.id}/people`}>
+                <Button variant="outline" size="sm" className="gap-2"><Users className="h-4 w-4" />People</Button>
               </Link>
-              <Link href={`/trips/${trip.id}/wallet`}>
-                <Button variant="outline" size="sm" className="gap-2"><Wallet className="h-4 w-4" />Wallet</Button>
+              <Link href={`/trips/${trip.id}/money`}>
+                <Button variant="outline" size="sm" className="gap-2"><Wallet className="h-4 w-4" />Money</Button>
               </Link>
             </div>
 
@@ -345,6 +385,22 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
           </>
         )}
       </div>
+
+      <ResponsiveFormModal open={editOpen} onOpenChange={setEditOpen} title="Edit Trip">
+        <TripForm
+          mode="edit"
+          tripId={trip.id}
+          initial={{
+            name: trip.name,
+            destination: trip.destination,
+            startDate: trip.startDate,
+            endDate: trip.endDate,
+            currency: trip.currency,
+          }}
+          onSuccess={() => { setEditOpen(false); router.refresh() }}
+          onCancel={() => setEditOpen(false)}
+        />
+      </ResponsiveFormModal>
     </>
   )
 }

@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
-export default function MemberDetailLoading() {
+export default function PersonDetailLoading() {
   return (
     <>
       {/* Mobile header */}

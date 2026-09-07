@@ -2,12 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { MobilePageHeader } from '@/components/shell/MobilePageHeader'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
-import { Wallet, ArrowLeftRight, Trash2 } from 'lucide-react'
+import { Wallet, ArrowLeftRight } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
-import { deleteConversion } from '@/server/actions/conversions'
 import { ConversionModal } from './ConversionModal'
 import type { Trip, Member, MemberBalance, Conversion } from '@/lib/db/schema'
 
@@ -18,7 +16,7 @@ interface Props {
   conversions: Conversion[]
 }
 
-export function WalletPage({ trip, members, balances, conversions }: Props) {
+export function WalletPageContent({ trip, members, balances }: Props) {
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
   const [convertTarget, setConvertTarget] = useState<{ memberId: string; fromCurrency: string } | null>(null)
@@ -48,13 +46,7 @@ export function WalletPage({ trip, members, balances, conversions }: Props) {
 
   return (
     <>
-      <MobilePageHeader title="Wallet" backHref={`/trips/${trip.id}`} />
-      <div className="p-4 md:p-6 space-y-4 md:space-y-5">
-        <div className="hidden md:block">
-          <h1 className="text-2xl font-bold tracking-tight">Wallet</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Cash on hand per member</p>
-        </div>
-
+      <div className="space-y-4 md:space-y-5">
         {currencies.length === 0 ? (
           <EmptyState
             icon={Wallet}
@@ -86,6 +78,8 @@ export function WalletPage({ trip, members, balances, conversions }: Props) {
                       >
                         <div className="flex items-center gap-2.5">
                           <div
+                            role="img"
+                            aria-label={member?.name ?? 'Unknown'}
                             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 ring-1 ring-white dark:ring-card"
                             style={{ backgroundColor: member?.color ?? '#6366f1' }}
                           >
@@ -102,6 +96,7 @@ export function WalletPage({ trip, members, balances, conversions }: Props) {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                            aria-label="Convert currency"
                             title="Convert currency"
                             onClick={() => setConvertTarget({ memberId: b.memberId, fromCurrency: currency })}
                           >
@@ -115,53 +110,6 @@ export function WalletPage({ trip, members, balances, conversions }: Props) {
               </Card>
             )
           })
-        )}
-
-        {conversions.length > 0 && (
-          <Card className="border-border">
-            <CardHeader className="pb-2 pt-4">
-              <CardTitle className="text-base font-semibold">Conversion History</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 pb-1">
-              {conversions.map((conv, idx) => {
-                const member = memberById.get(conv.memberId)
-                const rate = parseFloat(String(conv.exchangeRate))
-                return (
-                  <div
-                    key={conv.id}
-                    className={`flex items-center justify-between py-2.5 ${idx < conversions.length - 1 ? 'border-b border-border' : ''}`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                        style={{ backgroundColor: member?.color ?? '#6366f1' }}
-                      >
-                        {(member?.name ?? '?').charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {formatCurrency(parseFloat(String(conv.fromAmount)), conv.fromCurrency)}
-                          {' → '}
-                          {formatCurrency(parseFloat(String(conv.toAmount)), conv.toCurrency)}
-                          <span className="text-muted-foreground font-normal ml-1.5 text-xs">(×{rate < 1 ? rate.toFixed(4) : rate.toFixed(2)})</span>
-                        </p>
-                        <p className="text-xs text-muted-foreground">{conv.date}{conv.notes ? ` · ${conv.notes}` : ''}</p>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={async () => { await deleteConversion(conv.id, conv.tripId) }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
         )}
       </div>
 

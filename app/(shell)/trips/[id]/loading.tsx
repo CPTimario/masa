@@ -41,6 +41,7 @@ export default function TripDashboardLoading() {
             ))}
           </CardContent>
         </Card>
+        <Skeleton className="h-9 w-full rounded-lg" />
         <Skeleton className="h-[240px] md:h-[300px] w-full rounded-lg" />
       </div>
     </>

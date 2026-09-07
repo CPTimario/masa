@@ -2,25 +2,21 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Receipt, Users, ArrowLeftRight, Settings, Wallet } from 'lucide-react'
+import { LayoutDashboard, Receipt, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function BottomNav() {
   const pathname = usePathname()
   const tripId = pathname.match(/\/trips\/([^/]+)/)?.[1]
 
-  const items = tripId
-    ? [
-        { href: `/trips/${tripId}`, label: 'Dashboard', icon: LayoutDashboard },
-        { href: `/trips/${tripId}/expenses`, label: 'Expenses', icon: Receipt },
-        { href: `/trips/${tripId}/members`, label: 'Members', icon: Users },
-        { href: `/trips/${tripId}/wallet`, label: 'Wallet', icon: Wallet },
-        { href: `/trips/${tripId}/settle`, label: 'Settle Up', icon: ArrowLeftRight },
-      ]
-    : [
-        { href: '/trips', label: 'Trips', icon: LayoutDashboard },
-        { href: '/settings', label: 'Settings', icon: Settings },
-      ]
+  if (!tripId) return null
+
+  const items = [
+    { href: `/trips/${tripId}`, label: 'Overview', icon: LayoutDashboard },
+    { href: `/trips/${tripId}/expenses`, label: 'Expenses', icon: Receipt },
+    { href: `/trips/${tripId}/people`, label: 'People', icon: Users },
+    { href: `/trips/${tripId}/money`, label: 'Money', icon: Wallet },
+  ]
 
   return (
     <nav

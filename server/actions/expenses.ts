@@ -77,7 +77,7 @@ export async function createExpense(tripId: string, data: z.infer<typeof expense
   })
 
   revalidatePath(`/trips/${tripId}/expenses`)
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/people`)
   revalidatePath(`/trips/${tripId}`)
 }
 
@@ -92,7 +92,6 @@ export async function updateExpense(id: string, tripId: string, data: z.infer<ty
 
   await db.transaction(async (tx) => {
     const [oldExpense] = await tx.select().from(expenses).where(eq(expenses.id, id))
-    const oldSplits = await tx.select().from(expenseSplits).where(eq(expenseSplits.expenseId, id))
     const oldCurrency = oldExpense?.currency ?? trip.currency
 
     // Reverse old payer's wallet debit
@@ -139,7 +138,6 @@ export async function deleteExpense(id: string, tripId: string) {
 
   await db.transaction(async (tx) => {
     const [expense] = await tx.select().from(expenses).where(eq(expenses.id, id))
-    const splits = await tx.select().from(expenseSplits).where(eq(expenseSplits.expenseId, id))
     const currency = expense?.currency ?? trip.currency
 
     // Reverse wallet debit for whoever paid

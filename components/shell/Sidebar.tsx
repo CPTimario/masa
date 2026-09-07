@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { MapPin, Receipt, Users, ArrowLeftRight, Settings, LogOut, Wallet, LayoutDashboard } from 'lucide-react'
+import { MapPin, Receipt, Users, Settings, LogOut, Wallet, LayoutDashboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -18,11 +19,10 @@ function TripNavItems({ tripId }: { tripId?: string }) {
   if (!tripId) return null
 
   const items = [
-    { href: `/trips/${tripId}`, label: 'Dashboard', icon: LayoutDashboard },
+    { href: `/trips/${tripId}`, label: 'Overview', icon: LayoutDashboard },
     { href: `/trips/${tripId}/expenses`, label: 'Expenses', icon: Receipt },
-    { href: `/trips/${tripId}/members`, label: 'Members', icon: Users },
-    { href: `/trips/${tripId}/wallet`, label: 'Wallet', icon: Wallet },
-    { href: `/trips/${tripId}/settle`, label: 'Settle Up', icon: ArrowLeftRight },
+    { href: `/trips/${tripId}/people`, label: 'People', icon: Users },
+    { href: `/trips/${tripId}/money`, label: 'Money', icon: Wallet },
   ]
 
   return (
@@ -71,7 +71,7 @@ export function Sidebar() {
     <aside className="hidden md:flex flex-col w-64 border-r bg-sidebar h-screen sticky top-0">
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <img src="/icon.svg" alt="Masa" className="h-8 w-8 shrink-0" />
+          <Image src="/icon.svg" alt="Masa" width={32} height={32} className="h-8 w-8 shrink-0" unoptimized />
           <div>
             <h1 className="font-bold text-sm leading-tight tracking-tight">Masa</h1>
             <p className="text-[11px] text-muted-foreground leading-tight">Group trip expenses</p>

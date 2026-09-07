@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createTrip } from '@/server/actions/trips'
+import { createTrip, updateTrip } from '@/server/actions/trips'
 import { Label } from '@/components/ui/label'
 
 const schema = z.object({
@@ -22,16 +22,37 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-export function TripForm({ onCancel }: { onCancel?: () => void }) {
+interface Props {
+  mode?: 'create' | 'edit'
+  tripId?: string
+  initial?: { name: string; destination: string; startDate: string; endDate: string; currency: string }
+  onSuccess?: () => void
+  onCancel?: () => void
+}
+
+export function TripForm({ mode = 'create', tripId, initial, onSuccess, onCancel }: Props) {
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { currency: 'PHP' },
+    defaultValues: initial
+      ? {
+          name: initial.name,
+          destination: initial.destination,
+          startDate: initial.startDate,
+          endDate: initial.endDate,
+          currency: initial.currency as FormData['currency'],
+        }
+      : { currency: 'PHP' },
   })
 
   async function onSubmit(data: FormData) {
-    const formData = new FormData()
-    Object.entries(data).forEach(([k, v]) => formData.set(k, String(v)))
-    await createTrip(formData)
+    if (mode === 'edit') {
+      await updateTrip(tripId!, data)
+      onSuccess?.()
+    } else {
+      const formData = new FormData()
+      Object.entries(data).forEach(([k, v]) => formData.set(k, String(v)))
+      await createTrip(formData)
+    }
   }
 
   return (
@@ -57,7 +78,7 @@ export function TripForm({ onCancel }: { onCancel?: () => void }) {
           {errors.endDate && <p className="text-xs text-destructive mt-1">{errors.endDate.message}</p>}
         </div>
       </div>
-      <Select onValueChange={(v) => v && setValue('currency', v as FormData['currency'])} defaultValue="PHP">
+      <Select onValueChange={(v) => v && setValue('currency', v as FormData['currency'])} defaultValue={initial?.currency ?? 'PHP'}>
         <SelectTrigger>
           <SelectValue placeholder="Currency" />
         </SelectTrigger>
@@ -72,7 +93,9 @@ export function TripForm({ onCancel }: { onCancel?: () => void }) {
       <div className="flex gap-2 justify-end">
         {onCancel && <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>}
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Creating...' : 'Create Trip'}
+          {mode === 'edit'
+            ? (isSubmitting ? 'Saving…' : 'Save Changes')
+            : (isSubmitting ? 'Creating…' : 'Create Trip')}
         </Button>
       </div>
     </form>

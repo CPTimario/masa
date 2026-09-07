@@ -61,7 +61,7 @@ export async function createConversion(tripId: string, data: z.infer<typeof conv
     await upsertBalance(tx, parsed.memberId, parsed.toCurrency, parsed.toAmount)
   })
 
-  revalidatePath(`/trips/${tripId}/wallet`)
+  revalidatePath(`/trips/${tripId}/money`)
 }
 
 export async function deleteConversion(id: string, tripId: string) {
@@ -83,5 +83,5 @@ export async function deleteConversion(id: string, tripId: string) {
     await tx.delete(conversions).where(eq(conversions.id, id))
   })
 
-  revalidatePath(`/trips/${tripId}/wallet`)
+  revalidatePath(`/trips/${tripId}/money`)
 }

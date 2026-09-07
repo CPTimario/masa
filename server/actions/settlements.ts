@@ -64,8 +64,8 @@ export async function createSettlement(tripId: string, data: z.infer<typeof sett
     await upsertBalance(tx, parsed.toMemberId, parsed.currency, parsed.amount)
   })
 
-  revalidatePath(`/trips/${tripId}/settle`)
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/money`)
+  revalidatePath(`/trips/${tripId}/people`)
   revalidatePath(`/trips/${tripId}`)
 }
 
@@ -89,7 +89,7 @@ export async function deleteSettlement(id: string, tripId: string) {
     await tx.delete(settlements).where(eq(settlements.id, id))
   })
 
-  revalidatePath(`/trips/${tripId}/settle`)
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/money`)
+  revalidatePath(`/trips/${tripId}/people`)
   revalidatePath(`/trips/${tripId}`)
 }

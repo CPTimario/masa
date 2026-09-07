@@ -59,8 +59,8 @@ export async function createTransfer(tripId: string, data: z.infer<typeof transf
     await upsertBalance(tx, parsed.toMemberId, parsed.currency, parsed.amount)
   })
 
-  revalidatePath(`/trips/${tripId}/settle`)
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/money`)
+  revalidatePath(`/trips/${tripId}/people`)
   revalidatePath(`/trips/${tripId}`)
 }
 
@@ -84,7 +84,7 @@ export async function deleteTransfer(id: string, tripId: string) {
     await tx.delete(transfers).where(eq(transfers.id, id))
   })
 
-  revalidatePath(`/trips/${tripId}/settle`)
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/money`)
+  revalidatePath(`/trips/${tripId}/people`)
   revalidatePath(`/trips/${tripId}`)
 }

@@ -18,44 +18,9 @@ import { formatCurrency } from '@/lib/format'
 import { MobilePageHeader } from '@/components/shell/MobilePageHeader'
 import { ExpenseForm } from '@/components/expenses/ExpenseForm'
 import { TransferModal } from '@/components/wallet/TransferModal'
-import { ConversionModal } from '@/components/wallet/ConversionModal'
+import { getDebtBreakdown } from '@/lib/settlement'
 import { createSettlement } from '@/server/actions/settlements'
 import type { Trip, Member, Expense, ExpenseSplit, Settlement, SettlementItem, Transfer, MemberBalance } from '@/lib/db/schema'
-
-interface DebtItem {
-  splitId: string
-  expenseId: string
-  description: string
-  category: string
-  date: string
-  shareAmount: number
-  paidBySettlementId?: string
-}
-
-function getDebtBreakdown(
-  fromId: string,
-  toId: string,
-  expenses: Expense[],
-  splits: ExpenseSplit[],
-  paidSplitIds: Map<string, string>,
-): DebtItem[] {
-  return expenses
-    .filter((e) => e.type === 'shared' && e.paidById === toId)
-    .flatMap((e) => {
-      const split = splits.find((s) => s.expenseId === e.id && s.memberId === fromId)
-      if (!split) return []
-      return [{
-        splitId: split.id,
-        expenseId: e.id,
-        description: e.description,
-        category: e.category,
-        date: e.date,
-        shareAmount: Math.round(parseFloat(String(split.shareAmount)) * 100) / 100,
-        paidBySettlementId: paidSplitIds.get(split.id),
-      }]
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-}
 
 interface Props {
   trip: Trip
@@ -79,20 +44,16 @@ const TX_ICONS = {
   transfer_received:   { icon: ArrowDownLeft, color: 'text-success',     bg: 'bg-success/10' },
 }
 
-export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits, settlements, settlementItems, transfers, balances, memberDebts }: Props) {
+export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits, settlements, settlementItems, transfers, memberDebts }: Props) {
   const router = useRouter()
   const [expenseModalOpen, setExpenseModalOpen] = useState(false)
   const [transferModalOpen, setTransferModalOpen] = useState(false)
-  const [convertModalOpen, setConvertModalOpen] = useState(false)
   const [settleDebt, setSettleDebt] = useState<{ from: string; to: string; amount: number } | null>(null)
   const [settleDate, setSettleDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [useCustom, setUseCustom] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
   const [settling, setSettling] = useState(false)
-  const [selectedCurrency, setSelectedCurrency] = useState(
-    () => balances.find((b) => b.currency === trip.currency)?.currency ?? balances[0]?.currency ?? trip.currency
-  )
 
   const consumed = useMemo(() => {
     const personalSpent = expenses
@@ -172,7 +133,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
   function toggleItem(splitId: string) {
     setSelectedItems((prev) => {
       const next = new Set(prev)
-      next.has(splitId) ? next.delete(splitId) : next.add(splitId)
+      if (next.has(splitId)) next.delete(splitId); else next.add(splitId)
       return next
     })
     setUseCustom(false)
@@ -197,19 +158,21 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
     router.refresh()
   }
 
-  const activeBalance = balances.find((b) => b.currency === selectedCurrency) ?? balances[0]
+  const net = totalOwedToMe - totalOwed
 
   return (
     <>
-      <MobilePageHeader title={member.name} backHref={`/trips/${trip.id}/members`} />
+      <MobilePageHeader title={member.name} backHref={`/trips/${trip.id}/people`} />
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
 
         {/* Desktop header */}
         <div className="hidden md:flex items-center gap-3">
-          <Link href={`/trips/${trip.id}/members`} aria-label="Back to members" className="text-muted-foreground hover:text-foreground transition-colors">
+          <Link href={`/trips/${trip.id}/people`} aria-label="Back to people" className="text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div
+            role="img"
+            aria-label={member.name}
             className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0"
             style={{ backgroundColor: member.color }}
           >
@@ -227,7 +190,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
         </div>
 
         {/* KPI Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Card>
             <CardHeader className="pb-1 pt-3 px-3">
               <CardTitle className="text-xs text-muted-foreground">Budget</CardTitle>
@@ -244,68 +207,21 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
               <p className="text-sm md:text-lg font-bold truncate">{formatCurrency(consumed, trip.currency)}</p>
             </CardContent>
           </Card>
-          <Card className="col-span-2">
+          <Card>
             <CardHeader className="pb-1 pt-3 px-3">
-              <CardTitle className="text-xs text-muted-foreground">Wallet</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground">
+                {net > 0 ? 'Owed to you' : net < 0 ? 'You owe' : 'Net Balance'}
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-3">
-              {balances.length === 0 ? (
-                <p className="text-sm font-bold text-muted-foreground">No activity yet</p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {balances.map((b) => (
-                      <button
-                        key={b.currency}
-                        onClick={() => setSelectedCurrency(b.currency)}
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${
-                          selectedCurrency === b.currency
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                      >
-                        {b.currency}
-                      </button>
-                    ))}
-                  </div>
-                  {activeBalance && (() => {
-                    const amt = parseFloat(activeBalance.balance)
-                    return (
-                      <p className={`text-sm md:text-lg font-bold truncate ${amt >= 0 ? 'text-success' : 'text-destructive'}`}>
-                        {formatCurrency(amt, activeBalance.currency)}
-                      </p>
-                    )
-                  })()}
-                </div>
-              )}
+              {net > 0
+                ? <p className="text-sm md:text-lg font-bold text-success truncate">{formatCurrency(net, trip.currency)}</p>
+                : net < 0
+                ? <p className="text-sm md:text-lg font-bold text-destructive truncate">{formatCurrency(Math.abs(net), trip.currency)}</p>
+                : <p className="text-sm font-bold text-muted-foreground">Settled up</p>
+              }
             </CardContent>
           </Card>
-        </div>
-
-        {/* Debt summary */}
-        <div className="grid grid-cols-2 gap-3">
-            <Card>
-              <CardHeader className="pb-1 pt-3 px-3">
-                <CardTitle className="text-xs text-muted-foreground">You Owe</CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-3">
-                {totalOwed > 0
-                  ? <p className="text-sm md:text-lg font-bold text-destructive truncate">{formatCurrency(totalOwed, trip.currency)}</p>
-                  : <p className="text-sm font-bold text-muted-foreground">—</p>
-                }
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-1 pt-3 px-3">
-                <CardTitle className="text-xs text-muted-foreground">Owed to You</CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-3">
-                {totalOwedToMe > 0
-                  ? <p className="text-sm md:text-lg font-bold text-success truncate">{formatCurrency(totalOwedToMe, trip.currency)}</p>
-                  : <p className="text-sm font-bold text-muted-foreground">—</p>
-                }
-              </CardContent>
-            </Card>
         </div>
 
         {/* Budget progress */}
@@ -340,11 +256,6 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
           <Button size="sm" variant="outline" onClick={() => setTransferModalOpen(true)}>
             <ArrowLeftRight className="h-4 w-4 mr-1" /> Transfer
           </Button>
-          {balances.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setConvertModalOpen(true)}>
-              <ArrowLeftRight className="h-4 w-4 mr-1" /> Convert
-            </Button>
-          )}
         </div>
 
         {/* Tabs: Transaction History | Debts */}
@@ -493,19 +404,6 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
           if (!o) handleSuccess()
         }}
         defaultFromMemberId={member.id}
-      />
-
-      {/* Convert modal */}
-      <ConversionModal
-        tripId={trip.id}
-        members={allMembers.map((m) => ({ id: m.id, name: m.name }))}
-        open={convertModalOpen}
-        onOpenChange={(o) => {
-          setConvertModalOpen(o)
-          if (!o) handleSuccess()
-        }}
-        defaultMemberId={member.id}
-        defaultFromCurrency={selectedCurrency}
       />
 
       {/* Settle modal */}

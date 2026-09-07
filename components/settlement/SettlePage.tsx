@@ -6,13 +6,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ResponsiveFormModal } from '@/components/ui/responsive-form-modal'
-import { MobilePageHeader } from '@/components/shell/MobilePageHeader'
 import { Input } from '@/components/ui/input'
-import { computeBalances, simplifyDebts } from '@/lib/settlement'
+import { computeBalances, simplifyDebts, getDebtBreakdown } from '@/lib/settlement'
 import { formatCurrency } from '@/lib/format'
 import { createSettlement } from '@/server/actions/settlements'
 import { format } from 'date-fns'
-import { ArrowRight, CheckCircle2, History, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { ArrowRight, CheckCircle2, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SectionHeader } from '@/components/ui/section-header'
@@ -30,42 +29,7 @@ interface Props {
   initialTransfers: Transfer[]
 }
 
-interface DebtItem {
-  splitId: string
-  expenseId: string
-  description: string
-  category: string
-  date: string
-  shareAmount: number
-  paidBySettlementId?: string
-}
-
-function getDebtBreakdown(
-  fromId: string,
-  toId: string,
-  expenses: Expense[],
-  splits: ExpenseSplit[],
-  paidSplitIds: Map<string, string>,
-): DebtItem[] {
-  return expenses
-    .filter((e) => e.type === 'shared' && e.paidById === toId)
-    .flatMap((e) => {
-      const split = splits.find((s) => s.expenseId === e.id && s.memberId === fromId)
-      if (!split) return []
-      return [{
-        splitId: split.id,
-        expenseId: e.id,
-        description: e.description,
-        category: e.category,
-        date: e.date,
-        shareAmount: Math.round(parseFloat(String(split.shareAmount)) * 100) / 100,
-        paidBySettlementId: paidSplitIds.get(split.id),
-      }]
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-}
-
-export function SettlePage({
+export function SettlePageContent({
   tripId,
   currency,
   initialMembers,
@@ -149,7 +113,7 @@ export function SettlePage({
   function toggleItem(splitId: string) {
     setSelectedItems((prev) => {
       const next = new Set(prev)
-      next.has(splitId) ? next.delete(splitId) : next.add(splitId)
+      if (next.has(splitId)) next.delete(splitId); else next.add(splitId)
       return next
     })
     setUseCustom(false)
@@ -187,10 +151,7 @@ export function SettlePage({
 
   return (
     <>
-      <MobilePageHeader title="Settle Up" backHref={`/trips/${tripId}`} />
-      <div className="p-4 md:p-6 space-y-6">
-        <h1 className="hidden md:block text-2xl font-bold tracking-tight">Settle Up</h1>
-
+      <div className="space-y-6">
         <div>
           <SectionHeader title="Balances" />
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
@@ -201,6 +162,7 @@ export function SettlePage({
                   <CardContent className="pt-3 pb-3 px-3">
                     <div className="flex items-center gap-2 mb-1.5">
                       <div
+                        aria-hidden
                         className="h-6 w-6 rounded-full shrink-0 ring-1 ring-white dark:ring-card"
                         style={{ backgroundColor: member.color }}
                       />
@@ -230,6 +192,8 @@ export function SettlePage({
                   <CardContent className="py-3 px-4 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
+                        role="img"
+                        aria-label={getMemberName(debt.from)}
                         className="h-7 w-7 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
                         style={{ backgroundColor: getMemberColor(debt.from) }}
                       >
@@ -255,58 +219,6 @@ export function SettlePage({
             </div>
           )}
         </div>
-
-        {initialSettlements.length > 0 && (
-          <div className="space-y-3">
-            <SectionHeader title="Settlement History" />
-            <div className="space-y-2">
-              {[...initialSettlements]
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .map((settlement) => {
-                  const coveredSplitIds = initialSettlementItems
-                    .filter((si) => si.settlementId === settlement.id)
-                    .map((si) => si.expenseSplitId)
-                  const coveredExpenses = coveredSplitIds
-                    .map((splitId) => {
-                      const split = initialSplits.find((s) => s.id === splitId)
-                      if (!split) return null
-                      return initialExpenses.find((e) => e.id === split.expenseId)
-                    })
-                    .filter(Boolean) as Expense[]
-
-                  return (
-                    <Card key={settlement.id} className="border-border">
-                      <CardContent className="pt-3 pb-3 px-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-semibold text-sm truncate">{getMemberName(settlement.fromMemberId)}</span>
-                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="font-semibold text-sm truncate">{getMemberName(settlement.toMemberId)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-xs text-muted-foreground">{format(new Date(settlement.date), 'MMM d')}</span>
-                            <Badge variant="secondary" className="font-semibold tabular-nums">
-                              {formatCurrency(parseFloat(String(settlement.amount)), settlement.currency)}
-                            </Badge>
-                          </div>
-                        </div>
-                        {coveredExpenses.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {coveredExpenses.map((e) => (
-                              <Badge key={e.id} variant="outline" className="text-xs font-normal">{e.description}</Badge>
-                            ))}
-                          </div>
-                        )}
-                        {settlement.notes && (
-                          <p className="text-xs text-muted-foreground mt-1">{settlement.notes}</p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-            </div>
-          </div>
-        )}
 
         <ResponsiveFormModal open={paymentOpen} onOpenChange={setPaymentOpen} title="Record Settlement">
           {selectedDebt && (

@@ -12,7 +12,7 @@ let failed = 0
 function log(label, ok, detail = '') {
   const mark = ok ? '✓' : '✗'
   console.log(`  ${mark} ${label}${detail ? ' — ' + detail : ''}`)
-  ok ? passed++ : failed++
+  if (ok) passed++; else failed++
 }
 
 async function shot(page, name) {

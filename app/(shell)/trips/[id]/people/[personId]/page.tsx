@@ -6,8 +6,8 @@ import { eq, and, inArray } from 'drizzle-orm'
 import { MemberDetail } from '@/components/members/MemberDetail'
 import { computeBalances, simplifyDebts } from '@/lib/settlement'
 
-export default async function MemberDetailPage({ params }: { params: Promise<{ id: string; memberId: string }> }) {
-  const { id, memberId } = await params
+export default async function MemberDetailPage({ params }: { params: Promise<{ id: string; personId: string }> }) {
+  const { id, personId: memberId } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null

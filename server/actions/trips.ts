@@ -35,7 +35,7 @@ export async function createTrip(formData: FormData) {
   }).returning()
 
   revalidatePath('/trips')
-  redirect(`/trips/${trip.id}/members`)
+  redirect(`/trips/${trip.id}/people`)
 }
 
 export async function updateTrip(id: string, data: z.infer<typeof tripSchema>) {

@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CurrencyField } from '@/components/ui/currency-field'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { createExpense, updateExpense } from '@/server/actions/expenses'
 import { fetchExchangeRate } from '@/lib/exchange-rate'
@@ -15,8 +16,6 @@ import { formatCurrency } from '@/lib/format'
 import { format } from 'date-fns'
 import { ChevronDown, RefreshCw } from 'lucide-react'
 import { Label } from '@/components/ui/label'
-
-const CURRENCIES = ['PHP', 'THB', 'USD', 'SGD', 'EUR']
 
 const schema = z.object({
   description: z.string().min(1),
@@ -67,7 +66,7 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({})
   const [fetchingRate, startFetchingRate] = useTransition()
 
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       description: expense?.description ?? '',
@@ -81,7 +80,7 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
     },
   })
 
-  const selectedCurrency = watch('currency')
+  const selectedCurrency = useWatch({ control, name: 'currency' })
   const showExchangeRate = selectedCurrency && selectedCurrency !== currency
 
   function handleCurrencyChange(val: string | null) {
@@ -101,8 +100,8 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
     }
   }
 
-  const amount = watch('amount') ?? 0
-  const paidById = watch('paidById')
+  const amount = useWatch({ control, name: 'amount' }) ?? 0
+  const paidById = useWatch({ control, name: 'paidById' })
 
   const allIds = members.map(m => m.id)
   const allSelected = selectedMembers.length === members.length
@@ -166,31 +165,27 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
           <Input id="amount" type="number" step="0.01" placeholder="Amount" className="mt-1" {...register('amount', { valueAsNumber: true })} />
           {errors.amount && <p className="text-xs text-destructive mt-1">{errors.amount.message}</p>}
         </div>
-        <Select value={selectedCurrency ?? currency} onValueChange={handleCurrencyChange}>
-          <SelectTrigger className="w-24">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CURRENCIES.map(c => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="w-24 shrink-0">
+          <Label htmlFor="expense-currency" className="sr-only">Currency</Label>
+          <CurrencyField id="expense-currency" value={selectedCurrency ?? currency} onValueChange={handleCurrencyChange} />
+        </div>
       </div>
 
       {showExchangeRate && (
         <div className="flex gap-2 items-center">
           <div className="flex-1">
-            <label className="text-xs text-muted-foreground">Rate: 1 {selectedCurrency} =</label>
+            <label htmlFor="expense-exchange-rate" className="text-xs text-muted-foreground">Rate: 1 {selectedCurrency} =</label>
             <div className="flex gap-1 items-center mt-1">
               <Input
+                id="expense-exchange-rate"
                 type="number"
                 step="0.000001"
                 placeholder="Exchange rate"
+                aria-describedby="expense-exchange-rate-currency"
                 {...register('exchangeRate', { valueAsNumber: true })}
                 className="flex-1"
               />
-              <span className="text-sm text-muted-foreground">{currency}</span>
+              <span id="expense-exchange-rate-currency" className="text-sm text-muted-foreground">{currency}</span>
             </div>
           </div>
           <Button
@@ -294,11 +289,13 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
             <div className="space-y-2">
               {members.filter(m => selectedMembers.includes(m.id)).map(m => (
                 <div key={m.id} className="flex items-center gap-3">
-                  <span className="flex-1 text-sm">{m.name}</span>
+                  <label htmlFor={`split-${m.id}`} className="flex-1 text-sm">{m.name}</label>
                   <Input
+                    id={`split-${m.id}`}
                     type="number"
                     step="0.01"
                     className="w-24 h-7 text-sm"
+                    aria-label={`Split amount for ${m.name}`}
                     value={customSplits[m.id] ?? ''}
                     onChange={e => setCustomSplits(prev => ({ ...prev, [m.id]: e.target.value }))}
                   />

@@ -44,6 +44,41 @@ export function computeBalances(
   return balances
 }
 
+export interface DebtItem {
+  splitId: string
+  expenseId: string
+  description: string
+  category: string
+  date: string
+  shareAmount: number
+  paidBySettlementId?: string
+}
+
+export function getDebtBreakdown(
+  fromId: string,
+  toId: string,
+  expenses: Expense[],
+  splits: ExpenseSplit[],
+  paidSplitIds: Map<string, string>,
+): DebtItem[] {
+  return expenses
+    .filter((e) => e.type === 'shared' && e.paidById === toId)
+    .flatMap((e) => {
+      const split = splits.find((s) => s.expenseId === e.id && s.memberId === fromId)
+      if (!split) return []
+      return [{
+        splitId: split.id,
+        expenseId: e.id,
+        description: e.description,
+        category: e.category,
+        date: e.date,
+        shareAmount: Math.round(parseFloat(String(split.shareAmount)) * 100) / 100,
+        paidBySettlementId: paidSplitIds.get(split.id),
+      }]
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
 export function simplifyDebts(balances: Record<string, number>): { from: string; to: string; amount: number }[] {
   const creditors: { id: string; amount: number }[] = []
   const debtors: { id: string; amount: number }[] = []

@@ -42,3 +42,8 @@ next-env.d.ts
 
 # drizzle generated migrations (use db:push for schema management)
 /db/
+
+# UX/UI audit artifacts
+docs/ux-audit/screenshots/
+docs/ux-audit/playwright/
+docs/ux-audit/reports/

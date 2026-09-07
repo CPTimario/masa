@@ -1,17 +1,16 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CurrencyField } from '@/components/ui/currency-field'
 import { ResponsiveFormModal } from '@/components/ui/responsive-form-modal'
 import { createTransfer } from '@/server/actions/transfers'
 import { format } from 'date-fns'
-
-const CURRENCIES = ['PHP', 'THB', 'USD', 'SGD', 'EUR']
 
 const schema = z.object({
   fromMemberId: z.string().uuid(),
@@ -42,7 +41,7 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
   const defaultFrom = defaultFromMemberId ?? members[0]?.id ?? ''
   const defaultTo = members.find(m => m.id !== defaultFrom)?.id ?? ''
 
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, control, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       fromMemberId: defaultFrom,
@@ -54,13 +53,15 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
     },
   })
 
-  const fromMemberId = watch('fromMemberId')
+  const fromMemberId = useWatch({ control, name: 'fromMemberId' })
+  const toMemberId = useWatch({ control, name: 'toMemberId' })
+  const currency = useWatch({ control, name: 'currency' })
 
   useEffect(() => {
-    if (watch('toMemberId') === fromMemberId) {
+    if (toMemberId === fromMemberId) {
       setValue('toMemberId', members.find(m => m.id !== fromMemberId)?.id ?? '')
     }
-  }, [fromMemberId])
+  }, [fromMemberId, toMemberId, members, setValue])
 
   async function onSubmit(data: FormData) {
     await createTransfer(tripId, {
@@ -81,9 +82,9 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-muted-foreground">From</label>
-            <Select value={watch('fromMemberId')} onValueChange={(v) => v && setValue('fromMemberId', v)}>
+            <Select value={fromMemberId} onValueChange={(v) => v && setValue('fromMemberId', v)}>
               <SelectTrigger className="mt-1">
-                <SelectValue>{members.find((m) => m.id === watch('fromMemberId'))?.name ?? 'Select'}</SelectValue>
+                <SelectValue>{members.find((m) => m.id === fromMemberId)?.name ?? 'Select'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
@@ -92,9 +93,9 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
           </div>
           <div>
             <label className="text-xs text-muted-foreground">To</label>
-            <Select value={watch('toMemberId')} onValueChange={(v) => v && setValue('toMemberId', v)}>
+            <Select value={toMemberId} onValueChange={(v) => v && setValue('toMemberId', v)}>
               <SelectTrigger className="mt-1">
-                <SelectValue>{members.find((m) => m.id === watch('toMemberId'))?.name ?? 'Select'}</SelectValue>
+                <SelectValue>{members.find((m) => m.id === toMemberId)?.name ?? 'Select'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {members.filter(m => m.id !== fromMemberId).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
@@ -106,8 +107,9 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
 
         <div className="flex gap-2">
           <div className="flex-1">
-            <label className="text-xs text-muted-foreground">Amount</label>
+            <label htmlFor="transfer-amount" className="text-xs text-muted-foreground">Amount</label>
             <Input
+              id="transfer-amount"
               type="number"
               step="0.01"
               placeholder="0.00"
@@ -117,18 +119,21 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
             {errors.amount && <p className="text-xs text-destructive mt-1">{errors.amount.message}</p>}
           </div>
           <div className="w-24">
-            <label className="text-xs text-muted-foreground">Currency</label>
-            <Select value={watch('currency')} onValueChange={(v) => v && setValue('currency', v)}>
-              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <label htmlFor="transfer-currency" className="text-xs text-muted-foreground">Currency</label>
+            <div className="mt-1">
+              <CurrencyField id="transfer-currency" value={currency} onValueChange={(v) => setValue('currency', v)} />
+            </div>
           </div>
         </div>
 
-        <Input type="date" {...register('date')} />
-        <Input placeholder="Notes (optional)" {...register('notes')} />
+        <div>
+          <label htmlFor="transfer-date" className="text-xs text-muted-foreground">Date</label>
+          <Input id="transfer-date" type="date" className="mt-1" {...register('date')} />
+        </div>
+        <div>
+          <label htmlFor="transfer-notes" className="text-xs text-muted-foreground">Notes</label>
+          <Input id="transfer-notes" placeholder="Notes (optional)" className="mt-1" {...register('notes')} />
+        </div>
 
         <div className="flex gap-2 justify-end">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

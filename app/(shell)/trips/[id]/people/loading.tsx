@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 
-export default function MembersLoading() {
+export default function PeopleLoading() {
   return (
     <>
       <header className="md:hidden sticky top-0 z-40 h-[52px] border-b bg-background/95 backdrop-blur" />

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -24,10 +25,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<Message>(null)
   const [checkingSession, setCheckingSession] = useState(true)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
   const router = useRouter()
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === 'true') {
+      router.replace('/trips')
+      return
+    }
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         router.replace('/trips')
@@ -35,7 +40,7 @@ export default function LoginPage() {
         setCheckingSession(false)
       }
     })
-  }, [])
+  }, [supabase, router])
 
   async function handleGoogleLogin() {
     setLoading(true)
@@ -78,7 +83,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-background p-4">
       <div className="flex flex-col items-center gap-6 w-full max-w-sm">
         <div className="flex items-center gap-2">
-          <img src="/icon.svg" alt="Masa" className="h-10 w-10" />
+          <Image src="/icon.svg" alt="Masa" width={40} height={40} className="h-10 w-10" unoptimized />
           <span className="text-xl font-bold">Masa</span>
         </div>
         <Card className="w-full">

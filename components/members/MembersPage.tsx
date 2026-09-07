@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import Link from 'next/link'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
@@ -58,13 +59,13 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
   const [pendingDeleteMemberId, setPendingDeleteMemberId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<MemberFormData>({
+  const { register, handleSubmit, setValue, control, reset, formState: { errors, isSubmitting } } = useForm<MemberFormData>({
     resolver: zodResolver(memberSchema),
     defaultValues: { name: '', initialBudget: 0, isSelf: false, color: PRESET_COLORS[0] },
   })
 
-  const watchedColor = watch('color')
-  const watchedIsSelf = watch('isSelf')
+  const watchedColor = useWatch({ control, name: 'color' })
+  const watchedIsSelf = useWatch({ control, name: 'isSelf' })
 
   function openAdd() {
     setEditMember(null)
@@ -112,7 +113,7 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
   return (
     <>
       <MobilePageHeader
-        title="Members"
+        title="People"
         backHref={`/trips/${tripId}`}
         action={
           <Button size="sm" onClick={openAdd}>
@@ -124,31 +125,36 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
       <div className="p-4 md:p-6">
         <div className="hidden md:flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Members</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">{members.length} {members.length === 1 ? 'member' : 'members'}</p>
+            <h1 className="text-2xl font-bold tracking-tight">People</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{members.length} {members.length === 1 ? 'person' : 'people'}</p>
           </div>
           <Button onClick={openAdd} className="gap-2">
             <Plus className="h-4 w-4" />
-            Add Member
+            Add Person
           </Button>
         </div>
 
         {members.length === 0 ? (
           <EmptyState
             icon={Users}
-            heading="No members yet"
+            heading="No people yet"
             body="Add people to this trip to start tracking expenses"
-            action={{ label: 'Add Member', onClick: openAdd }}
+            action={{ label: 'Add Person', onClick: openAdd }}
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {members.map((member) => {
               const budget = parseFloat(member.initialBudget || '0')
               return (
-                <Card key={member.id} className="border-border">
+                <Card key={member.id} className="border-border transition-shadow hover:shadow-md">
                   <CardContent className="pt-4 pb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
+                    <Link
+                      href={`/trips/${tripId}/people/${member.id}`}
+                      className="flex items-center gap-3 min-w-0 flex-1"
+                    >
                       <div
+                        role="img"
+                        aria-label={member.name}
                         className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0 ring-2 ring-white dark:ring-card shadow-sm"
                         style={{ backgroundColor: member.color }}
                       >
@@ -167,12 +173,12 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
                           </p>
                         )}
                       </div>
-                    </div>
+                    </Link>
                     <div className="flex gap-1 shrink-0">
                       <Button
                         variant="ghost"
                         size="icon-xl"
-                        aria-label="Edit member"
+                        aria-label="Edit person"
                         className="text-muted-foreground hover:text-foreground"
                         onClick={() => openEdit(member)}
                       >
@@ -181,7 +187,7 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
                       <Button
                         variant="ghost"
                         size="icon-xl"
-                        aria-label="Remove member"
+                        aria-label="Remove person"
                         className="text-muted-foreground hover:text-destructive"
                         onClick={() => setPendingDeleteMemberId(member.id)}
                       >
@@ -199,7 +205,7 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
       <ResponsiveFormModal
         open={open}
         onOpenChange={setOpen}
-        title={editMember ? 'Edit Member' : 'Add Member'}
+        title={editMember ? 'Edit Person' : 'Add Person'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 p-4 md:p-0">
           <div className="space-y-1">
@@ -250,7 +256,7 @@ export function MembersPage({ tripId, initialMembers = [], currency = 'PHP' }: {
 
       <AlertDialog open={pendingDeleteMemberId !== null} onOpenChange={(o) => { if (!o) setPendingDeleteMemberId(null) }}>
         <AlertDialogContent>
-          <AlertDialogTitle>Remove member?</AlertDialogTitle>
+          <AlertDialogTitle>Remove person?</AlertDialogTitle>
           <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

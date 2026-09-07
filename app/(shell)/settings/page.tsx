@@ -16,7 +16,7 @@ interface Trip { id: string; name: string }
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [trips, setTrips] = useState<Trip[]>([])
@@ -31,7 +31,7 @@ export default function SettingsPage() {
         if (data) setTrips(data as Trip[])
       }),
     ]).finally(() => setIsLoading(false))
-  }, [])
+  }, [supabase])
 
   async function handleSignOut() {
     await supabase.auth.signOut()

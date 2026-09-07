@@ -40,7 +40,7 @@ export async function createMember(tripId: string, data: z.infer<typeof memberSc
         })
     }
   })
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/people`)
 }
 
 export async function updateMember(id: string, tripId: string, data: Partial<z.infer<typeof memberSchema>>) {
@@ -69,7 +69,7 @@ export async function updateMember(id: string, tripId: string, data: Partial<z.i
       ...(initialBudget !== undefined ? { initialBudget: String(initialBudget) } : {}),
     }).where(eq(members.id, id))
   })
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/people`)
 }
 
 export async function deleteMember(id: string, tripId: string) {
@@ -79,5 +79,5 @@ export async function deleteMember(id: string, tripId: string) {
 
   await verifyTripOwnership(tripId, user.id)
   await db.delete(members).where(eq(members.id, id))
-  revalidatePath(`/trips/${tripId}/members`)
+  revalidatePath(`/trips/${tripId}/people`)
 }
