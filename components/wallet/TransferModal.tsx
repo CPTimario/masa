@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -19,6 +20,9 @@ const schema = z.object({
   currency: z.string().length(3),
   date: z.string(),
   notes: z.string().optional(),
+}).refine(d => d.fromMemberId !== d.toMemberId, {
+  message: 'Sender and recipient must be different members',
+  path: ['toMemberId'],
 })
 
 type FormData = z.infer<typeof schema>
@@ -35,17 +39,28 @@ interface Props {
 }
 
 export function TransferModal({ tripId, tripCurrency, members, open, onOpenChange, defaultFromMemberId }: Props) {
+  const defaultFrom = defaultFromMemberId ?? members[0]?.id ?? ''
+  const defaultTo = members.find(m => m.id !== defaultFrom)?.id ?? ''
+
   const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      fromMemberId: defaultFromMemberId ?? members[0]?.id ?? '',
-      toMemberId: members[1]?.id ?? '',
+      fromMemberId: defaultFrom,
+      toMemberId: defaultTo,
       amount: undefined,
       currency: tripCurrency,
       date: format(new Date(), 'yyyy-MM-dd'),
       notes: '',
     },
   })
+
+  const fromMemberId = watch('fromMemberId')
+
+  useEffect(() => {
+    if (watch('toMemberId') === fromMemberId) {
+      setValue('toMemberId', members.find(m => m.id !== fromMemberId)?.id ?? '')
+    }
+  }, [fromMemberId])
 
   async function onSubmit(data: FormData) {
     await createTransfer(tripId, {
@@ -82,9 +97,10 @@ export function TransferModal({ tripId, tripCurrency, members, open, onOpenChang
                 <SelectValue>{members.find((m) => m.id === watch('toMemberId'))?.name ?? 'Select'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                {members.filter(m => m.id !== fromMemberId).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            {errors.toMemberId && <p className="text-xs text-destructive mt-1">{errors.toMemberId.message}</p>}
           </div>
         </div>
 

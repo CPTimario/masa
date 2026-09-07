@@ -18,6 +18,7 @@ import { formatCurrency } from '@/lib/format'
 import { MobilePageHeader } from '@/components/shell/MobilePageHeader'
 import { ExpenseForm } from '@/components/expenses/ExpenseForm'
 import { TransferModal } from '@/components/wallet/TransferModal'
+import { ConversionModal } from '@/components/wallet/ConversionModal'
 import { createSettlement } from '@/server/actions/settlements'
 import type { Trip, Member, Expense, ExpenseSplit, Settlement, SettlementItem, Transfer, MemberBalance } from '@/lib/db/schema'
 
@@ -82,6 +83,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
   const router = useRouter()
   const [expenseModalOpen, setExpenseModalOpen] = useState(false)
   const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [convertModalOpen, setConvertModalOpen] = useState(false)
   const [settleDebt, setSettleDebt] = useState<{ from: string; to: string; amount: number } | null>(null)
   const [settleDate, setSettleDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
@@ -338,6 +340,11 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
           <Button size="sm" variant="outline" onClick={() => setTransferModalOpen(true)}>
             <ArrowLeftRight className="h-4 w-4 mr-1" /> Transfer
           </Button>
+          {balances.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setConvertModalOpen(true)}>
+              <ArrowLeftRight className="h-4 w-4 mr-1" /> Convert
+            </Button>
+          )}
         </div>
 
         {/* Tabs: Transaction History | Debts */}
@@ -486,6 +493,19 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
           if (!o) handleSuccess()
         }}
         defaultFromMemberId={member.id}
+      />
+
+      {/* Convert modal */}
+      <ConversionModal
+        tripId={trip.id}
+        members={allMembers.map((m) => ({ id: m.id, name: m.name }))}
+        open={convertModalOpen}
+        onOpenChange={(o) => {
+          setConvertModalOpen(o)
+          if (!o) handleSuccess()
+        }}
+        defaultMemberId={member.id}
+        defaultFromCurrency={selectedCurrency}
       />
 
       {/* Settle modal */}

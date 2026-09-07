@@ -88,6 +88,24 @@ export const transfers = pgTable('transfers', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// Currency conversion: a member exchanges one currency for another
+export const conversions = pgTable('conversions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tripId: uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  memberId: uuid('member_id').notNull().references(() => members.id),
+  fromCurrency: varchar('from_currency', { length: 3 }).notNull(),
+  fromAmount: numeric('from_amount').notNull(),
+  toCurrency: varchar('to_currency', { length: 3 }).notNull(),
+  toAmount: numeric('to_amount').notNull(),
+  exchangeRate: numeric('exchange_rate').notNull(),
+  date: date('date').notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export type Conversion = typeof conversions.$inferSelect
+export type NewConversion = typeof conversions.$inferInsert
+
 // Materialized per-member, per-currency balance — updated atomically on every mutation
 export const memberBalances = pgTable('member_balances', {
   memberId: uuid('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),

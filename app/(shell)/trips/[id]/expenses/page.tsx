@@ -12,7 +12,7 @@ export default async function TripExpensesPage({ params }: { params: Promise<{ i
 
   const [[trip], tripMembers, tripExpenses] = await Promise.all([
     db.select().from(trips).where(and(eq(trips.id, id), eq(trips.userId, user.id))),
-    db.select().from(members).where(eq(members.tripId, id)),
+    db.select().from(members).where(eq(members.tripId, id)).orderBy(desc(members.isSelf)),
     db.select().from(expenses).where(eq(expenses.tripId, id)).orderBy(desc(expenses.date)),
   ])
 

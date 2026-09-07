@@ -15,6 +15,9 @@ const transferSchema = z.object({
   exchangeRateToTrip: z.coerce.number().positive().optional(),
   date: z.string(),
   notes: z.string().optional(),
+}).refine(d => d.fromMemberId !== d.toMemberId, {
+  message: 'Sender and recipient must be different members',
+  path: ['toMemberId'],
 })
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]

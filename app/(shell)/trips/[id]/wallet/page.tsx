@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db'
-import { trips, members, memberBalances } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { trips, members, memberBalances, conversions } from '@/lib/db/schema'
+import { eq, and, inArray, desc } from 'drizzle-orm'
 import { WalletPage } from '@/components/wallet/WalletPage'
 
 export default async function TripWalletPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,15 +13,18 @@ export default async function TripWalletPage({ params }: { params: Promise<{ id:
 
   const [[trip], tripMembers] = await Promise.all([
     db.select().from(trips).where(and(eq(trips.id, id), eq(trips.userId, user.id))),
-    db.select().from(members).where(eq(members.tripId, id)),
+    db.select().from(members).where(eq(members.tripId, id)).orderBy(desc(members.isSelf)),
   ])
 
   if (!trip) notFound()
 
   const memberIds = tripMembers.map((m) => m.id)
-  const balances = memberIds.length
-    ? await db.select().from(memberBalances).where(inArray(memberBalances.memberId, memberIds))
-    : []
+  const [balances, conversionRows] = await Promise.all([
+    memberIds.length
+      ? db.select().from(memberBalances).where(inArray(memberBalances.memberId, memberIds))
+      : Promise.resolve([]),
+    db.select().from(conversions).where(eq(conversions.tripId, trip.id)).orderBy(desc(conversions.createdAt)),
+  ])
 
-  return <WalletPage trip={trip} members={tripMembers} balances={balances} />
+  return <WalletPage trip={trip} members={tripMembers} balances={balances} conversions={conversionRows} />
 }
