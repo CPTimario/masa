@@ -26,6 +26,7 @@ interface LocalExpense {
   paid_by_id: string
   type: string
   date: string
+  currency: string | null
   splitMemberIds: string[]
 }
 
@@ -38,6 +39,7 @@ function toLocal(e: Expense, splitMap: Map<string, string[]>): LocalExpense {
     paid_by_id: e.paidById,
     type: e.type,
     date: e.date,
+    currency: e.currency,
     splitMemberIds: splitMap.get(e.id) ?? [],
   }
 }
@@ -285,7 +287,15 @@ export function ExpensesPage({ tripId, initialTrip, initialMembers, initialExpen
             ) : (
               <div className="space-y-5">
             {grouped.map(([date, group]) => {
-              const dayTotal = group.reduce((sum, e) => sum + parseFloat(e.amount), 0)
+              const dayTotals = group.reduce<Record<string, number>>((acc, e) => {
+                const cur = e.currency ?? currency
+                acc[cur] = (acc[cur] ?? 0) + parseFloat(e.amount)
+                return acc
+              }, {})
+              const dayTotalLabel = Object.entries(dayTotals)
+                .sort(([a], [b]) => (a === currency ? -1 : b === currency ? 1 : a.localeCompare(b)))
+                .map(([cur, total]) => formatCurrency(total, cur))
+                .join(' · ')
               return (
                 <div key={date}>
                   <div className="flex items-center justify-between mb-2">
@@ -293,7 +303,7 @@ export function ExpensesPage({ tripId, initialTrip, initialMembers, initialExpen
                       {format(new Date(date), 'EEEE, MMM d')}
                     </p>
                     <p className="text-xs font-semibold text-muted-foreground tabular-nums">
-                      {formatCurrency(dayTotal, currency)}
+                      {dayTotalLabel}
                     </p>
                   </div>
                   <div className="space-y-1.5">
@@ -319,7 +329,7 @@ export function ExpensesPage({ tripId, initialTrip, initialMembers, initialExpen
                             <div className="flex items-start justify-between gap-2">
                               <p className="font-semibold text-sm truncate">{expense.description}</p>
                               <span className="font-bold text-sm tabular-nums shrink-0">
-                                {formatCurrency(parseFloat(expense.amount), currency)}
+                                {formatCurrency(parseFloat(expense.amount), expense.currency ?? currency)}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">

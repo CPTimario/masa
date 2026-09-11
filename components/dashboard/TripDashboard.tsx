@@ -1,9 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
 import { CATEGORIES } from '@/lib/categories'
 import { format, eachDayOfInterval, parseISO } from 'date-fns'
@@ -30,14 +32,39 @@ interface Props {
 export function TripDashboard({ trip, members: rawMembers, expenses, expenseSplits, settlements, transfers }: Props) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
+  const [chartCurrency, setChartCurrency] = useState(() => {
+    const present = new Set(expenses.map(e => e.currency ?? trip.currency))
+    if (present.size === 0 || present.has(trip.currency)) return trip.currency
+    return [...present].sort((a, b) => a.localeCompare(b))[0]
+  })
   const members = useMemo(() => [...rawMembers].sort((a, b) => (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0)), [rawMembers])
   const totalBudget = useMemo(() => members.reduce((sum, m) => sum + parseFloat(m.initialBudget || '0'), 0), [members])
-  const totalSpent = useMemo(() => expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0), [expenses])
-  const remaining = totalBudget - totalSpent
+
+  const spentByCurrency = useMemo(() => {
+    const map: Record<string, number> = {}
+    expenses.forEach(e => {
+      const currency = e.currency ?? trip.currency
+      map[currency] = (map[currency] ?? 0) + parseFloat(e.amount)
+    })
+    return map
+  }, [expenses, trip.currency])
+
+  const currenciesPresent = useMemo(() => {
+    const set = new Set(expenses.map(e => e.currency ?? trip.currency))
+    const rest = Array.from(set).filter(c => c !== trip.currency).sort((a, b) => a.localeCompare(b))
+    return set.has(trip.currency) ? [trip.currency, ...rest] : rest
+  }, [expenses, trip.currency])
+
+  const remaining = totalBudget - (spentByCurrency[trip.currency] ?? 0)
+
+  const chartExpenses = useMemo(
+    () => expenses.filter(e => (e.currency ?? trip.currency) === chartCurrency),
+    [expenses, chartCurrency, trip.currency]
+  )
 
   const categoryData = useMemo(() => {
     const map: Record<string, number> = {}
-    expenses.forEach(e => {
+    chartExpenses.forEach(e => {
       map[e.category] = (map[e.category] ?? 0) + parseFloat(e.amount)
     })
     return Object.entries(map).map(([key, value]) => ({
@@ -45,60 +72,86 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
       value: Math.round(value * 100) / 100,
       color: CATEGORIES[key as keyof typeof CATEGORIES]?.color ?? '#6b7280',
     }))
-  }, [expenses])
+  }, [chartExpenses])
 
   const dailyData = useMemo(() => {
     try {
       const tripStart = parseISO(trip.startDate)
       const tripEnd = parseISO(trip.endDate)
-      const expenseDates = expenses.map(e => parseISO(e.date))
+      const expenseDates = chartExpenses.map(e => parseISO(e.date))
       const start = expenseDates.length ? expenseDates.reduce((a, b) => a < b ? a : b, tripStart) : tripStart
       const end = expenseDates.length ? expenseDates.reduce((a, b) => a > b ? a : b, tripEnd) : tripEnd
       const days = eachDayOfInterval({ start, end })
       return days.map(day => {
         const dateStr = format(day, 'yyyy-MM-dd')
-        const total = expenses.filter(e => e.date === dateStr).reduce((sum, e) => sum + parseFloat(e.amount), 0)
+        const total = chartExpenses.filter(e => e.date === dateStr).reduce((sum, e) => sum + parseFloat(e.amount), 0)
         return { date: format(day, 'MMM d'), amount: Math.round(total * 100) / 100 }
       })
     } catch {
       return []
     }
-  }, [trip, expenses])
+  }, [trip, chartExpenses])
 
   const memberSpendingData = useMemo(() =>
     members.map(m => ({
       name: m.name,
-      spent: Math.round(expenses.filter(e => e.paidById === m.id).reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100) / 100,
+      spent: Math.round(chartExpenses.filter(e => e.paidById === m.id).reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100) / 100,
       color: m.color,
     }))
-  , [members, expenses])
+  , [members, chartExpenses])
 
   const recentExpenses = useMemo(() =>
     [...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
   , [expenses])
 
-  const balances = useMemo(() => computeBalances(members, expenses, expenseSplits, settlements, new Map(), transfers), [members, expenses, expenseSplits, settlements, transfers])
+  const balancesByCurrency = useMemo(() => computeBalances(members, expenses, expenseSplits, settlements, transfers, trip.currency), [members, expenses, expenseSplits, settlements, transfers, trip.currency])
+
+  const expenseById = useMemo(() => new Map(expenses.map(e => [e.id, e])), [expenses])
 
   const memberSummaries = useMemo(() =>
     members.map(m => {
-      const personalSpent = expenses
+      const consumedByCurrency: Record<string, number> = {}
+      expenses
         .filter(e => e.paidById === m.id && e.type === 'personal')
-        .reduce((sum, e) => sum + parseFloat(e.amount), 0)
-      const splitConsumed = expenseSplits
+        .forEach(e => {
+          const currency = e.currency ?? trip.currency
+          consumedByCurrency[currency] = (consumedByCurrency[currency] ?? 0) + parseFloat(e.amount)
+        })
+      expenseSplits
         .filter(s => s.memberId === m.id)
-        .reduce((sum, s) => sum + parseFloat(s.shareAmount), 0)
+        .forEach(s => {
+          const expense = expenseById.get(s.expenseId)
+          if (!expense) return
+          const currency = expense.currency ?? trip.currency
+          consumedByCurrency[currency] = (consumedByCurrency[currency] ?? 0) + parseFloat(s.shareAmount)
+        })
+      const balances = Object.entries(balancesByCurrency)
+        .map(([currency, byMember]) => ({ currency, amount: Math.round((byMember[m.id] ?? 0) * 100) / 100 }))
+        .filter(b => Math.abs(b.amount) > 0.005)
+        .sort((a, b) => (a.currency === trip.currency ? -1 : b.currency === trip.currency ? 1 : a.currency.localeCompare(b.currency)))
       return {
         member: m,
-        consumed: personalSpent + splitConsumed,
-        balance: balances[m.id] ?? 0,
+        consumedByCurrency,
+        balances,
       }
     })
-  , [members, expenses, expenseSplits, balances])
+  , [members, expenses, expenseSplits, expenseById, balancesByCurrency, trip.currency])
 
-  const budgetPct = totalBudget > 0 ? Math.min(100, (totalSpent / totalBudget) * 100) : 0
+  const budgetPct = totalBudget > 0 ? Math.min(100, ((spentByCurrency[trip.currency] ?? 0) / totalBudget) * 100) : 0
   const isEmpty = members.length === 0
 
-  const statCards = [
+  const spentCurrencyList = currenciesPresent.length > 0
+    ? currenciesPresent
+    : [trip.currency]
+
+  const statCards: {
+    label: string
+    value: ReactNode
+    icon: typeof DollarSign
+    iconBg: string
+    iconColor: string
+    valueColor?: string
+  }[] = [
     {
       label: 'Total Budget',
       value: formatCurrency(totalBudget, trip.currency),
@@ -108,7 +161,15 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
     },
     {
       label: 'Total Spent',
-      value: formatCurrency(totalSpent, trip.currency),
+      value: (
+        <span className="flex flex-col">
+          {spentCurrencyList.map((currency, idx) => (
+            <span key={currency} className={idx === 0 ? '' : 'text-sm font-semibold text-muted-foreground'}>
+              {formatCurrency(spentByCurrency[currency] ?? 0, currency)}
+            </span>
+          ))}
+        </span>
+      ),
       icon: TrendingDown,
       iconBg: 'bg-destructive/10',
       iconColor: 'text-destructive',
@@ -226,10 +287,10 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
               <div className="space-y-3">
                 <SectionHeader title="People" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {memberSummaries.map(({ member, consumed, balance: rawBalance }) => {
-                    const balance = Math.round(rawBalance * 100) / 100
+                  {memberSummaries.map(({ member, consumedByCurrency, balances }) => {
                     const budget = parseFloat(member.initialBudget || '0')
-                    const consumedPct = budget > 0 ? Math.min(100, (consumed / budget) * 100) : 0
+                    const consumedInTrip = consumedByCurrency[trip.currency] ?? 0
+                    const consumedPct = budget > 0 ? Math.min(100, (consumedInTrip / budget) * 100) : 0
                     return (
                       <Link key={member.id} href={`/trips/${trip.id}/people/${member.id}`}>
                         <Card className="hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer border-border">
@@ -249,16 +310,26 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
                                     <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium shrink-0">You</span>
                                   )}
                                 </div>
-                                <span className={`text-xs font-semibold flex items-center gap-0.5 ${balance > 0 ? 'text-success' : balance < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                  {balance > 0 ? <TrendingUp className="h-3 w-3" /> : balance < 0 ? <TrendingDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
-                                  {balance > 0 ? `+${formatCurrency(balance, trip.currency)}` : balance < 0 ? `-${formatCurrency(Math.abs(balance), trip.currency)}` : 'Settled'}
-                                </span>
+                                {balances.length === 0 ? (
+                                  <span className="text-xs font-semibold flex items-center gap-0.5 text-muted-foreground">
+                                    <Minus className="h-3 w-3" />Settled
+                                  </span>
+                                ) : (
+                                  <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                    {balances.map(({ currency, amount }) => (
+                                      <span key={currency} className={`text-xs font-semibold flex items-center gap-0.5 ${amount > 0 ? 'text-success' : 'text-destructive'}`}>
+                                        {amount > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                                        {amount > 0 ? `+${formatCurrency(amount, currency)}` : `-${formatCurrency(Math.abs(amount), currency)}`}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             {budget > 0 && (
                               <div className="space-y-1">
                                 <div className="flex justify-between text-[11px] text-muted-foreground">
-                                  <span>{formatCurrency(consumed, trip.currency)} spent</span>
+                                  <span>{formatCurrency(consumedInTrip, trip.currency)} spent</span>
                                   <span>{formatCurrency(budget, trip.currency)} budget</span>
                                 </div>
                                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -290,6 +361,22 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
               </Link>
             </div>
 
+            {currenciesPresent.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground font-medium">Currency</span>
+                <Select value={chartCurrency} onValueChange={(v) => v && setChartCurrency(v)}>
+                  <SelectTrigger size="sm" aria-label="Chart currency">
+                    <SelectValue>{chartCurrency}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currenciesPresent.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <Tabs defaultValue="category">
               <TabsList className="w-full md:w-auto">
                 <TabsTrigger value="category">By Category</TabsTrigger>
@@ -310,7 +397,7 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
                             <Pie data={categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} innerRadius={40}>
                               {categoryData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                             </Pie>
-                            <Tooltip formatter={(v) => formatCurrency(Number(v), trip.currency)} />
+                            <Tooltip formatter={(v) => formatCurrency(Number(v), chartCurrency)} />
                             <Legend wrapperStyle={{ paddingTop: 8, fontSize: 12 }} />
                           </PieChart>
                         </ResponsiveContainer>
@@ -329,7 +416,7 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
                         <BarChart data={dailyData}>
                           <XAxis dataKey="date" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                           <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={(v) => formatCurrency(Number(v), trip.currency)} cursor={{ fill: 'var(--muted)' }} />
+                          <Tooltip formatter={(v) => formatCurrency(Number(v), chartCurrency)} cursor={{ fill: 'var(--muted)' }} />
                           <Bar dataKey="amount" fill="var(--color-chart-1)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -347,7 +434,7 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
                         <BarChart data={memberSpendingData} layout="vertical">
                           <XAxis type="number" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                           <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={(v) => formatCurrency(Number(v), trip.currency)} cursor={{ fill: 'var(--muted)' }} />
+                          <Tooltip formatter={(v) => formatCurrency(Number(v), chartCurrency)} cursor={{ fill: 'var(--muted)' }} />
                           <Bar dataKey="spent" radius={[0, 4, 4, 0]}>
                             {memberSpendingData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                           </Bar>
@@ -376,7 +463,7 @@ export function TripDashboard({ trip, members: rawMembers, expenses, expenseSpli
                           {format(new Date(e.date), 'MMM d')} · {CATEGORIES[e.category as keyof typeof CATEGORIES]?.label}
                         </p>
                       </div>
-                      <span className="font-semibold text-sm tabular-nums shrink-0 ml-3">{formatCurrency(parseFloat(e.amount), trip.currency)}</span>
+                      <span className="font-semibold text-sm tabular-nums shrink-0 ml-3">{formatCurrency(parseFloat(e.amount), e.currency ?? trip.currency)}</span>
                     </div>
                   ))}
                 </CardContent>

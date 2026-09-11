@@ -15,7 +15,6 @@ const expenseSchema = z.object({
   type: z.enum(['personal', 'shared']),
   date: z.string(),
   currency: z.string().length(3).optional(),
-  exchangeRate: z.coerce.number().positive().optional(),
   splits: z.array(z.object({
     memberId: z.string().uuid(),
     shareAmount: z.coerce.number().positive(),
@@ -60,7 +59,6 @@ export async function createExpense(tripId: string, data: z.infer<typeof expense
       type: parsed.type,
       date: parsed.date,
       currency: parsed.currency ?? null,
-      exchangeRate: parsed.exchangeRate != null ? String(parsed.exchangeRate) : null,
     }).returning()
 
     if (parsed.type === 'shared' && parsed.splits?.length) {
@@ -107,7 +105,6 @@ export async function updateExpense(id: string, tripId: string, data: z.infer<ty
       type: parsed.type,
       date: parsed.date,
       currency: parsed.currency ?? null,
-      exchangeRate: parsed.exchangeRate != null ? String(parsed.exchangeRate) : null,
     }).where(eq(expenses.id, id))
 
     await tx.delete(expenseSplits).where(eq(expenseSplits.expenseId, id))

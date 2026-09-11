@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ResponsiveFormModal } from '@/components/ui/responsive-form-modal'
 import { Input } from '@/components/ui/input'
-import { computeBalances, simplifyDebts, getDebtBreakdown } from '@/lib/settlement'
+import { computeBalances, simplifyDebtsByCurrency, getDebtBreakdown } from '@/lib/settlement'
 import { formatCurrency } from '@/lib/format'
 import { createSettlement } from '@/server/actions/settlements'
 import { format } from 'date-fns'
@@ -41,31 +41,26 @@ export function SettlePageContent({
 }: Props) {
   const router = useRouter()
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [selectedDebt, setSelectedDebt] = useState<{ from: string; to: string; amount: number } | null>(null)
+  const [selectedDebt, setSelectedDebt] = useState<{ from: string; to: string; amount: number; currency: string } | null>(null)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [customAmount, setCustomAmount] = useState('')
   const [useCustom, setUseCustom] = useState(false)
   const [payDate, setPayDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const settlementExpenseMap = useMemo(() => {
-    const map = new Map<string, Expense>()
-    for (const item of initialSettlementItems) {
-      if (!map.has(item.settlementId)) {
-        const split = initialSplits.find((s) => s.id === item.expenseSplitId)
-        if (split) {
-          const expense = initialExpenses.find((e) => e.id === split.expenseId)
-          if (expense) map.set(item.settlementId, expense)
-        }
-      }
-    }
-    return map
-  }, [initialSettlementItems, initialSplits, initialExpenses])
+  const balancesByCurrency = useMemo(() =>
+    initialMembers.length
+      ? computeBalances(initialMembers, initialExpenses, initialSplits, initialSettlements, initialTransfers, currency)
+      : {},
+    [initialMembers, initialExpenses, initialSplits, initialSettlements, initialTransfers, currency]
+  )
 
-  const balances = initialMembers.length
-    ? computeBalances(initialMembers, initialExpenses, initialSplits, initialSettlements, settlementExpenseMap, initialTransfers)
-    : {}
-  const debts = simplifyDebts(balances)
+  const currencies = useMemo(() => {
+    const rest = Object.keys(balancesByCurrency).filter((c) => c !== currency).sort()
+    return balancesByCurrency[currency] ? [currency, ...rest] : rest
+  }, [balancesByCurrency, currency])
+
+  const debts = useMemo(() => simplifyDebtsByCurrency(balancesByCurrency), [balancesByCurrency])
 
   const paidSplitIds = useMemo(() =>
     new Map(initialSettlementItems.map((si) => [si.expenseSplitId, si.settlementId])),
@@ -74,8 +69,8 @@ export function SettlePageContent({
 
   const breakdown = useMemo(() => {
     if (!selectedDebt) return []
-    return getDebtBreakdown(selectedDebt.from, selectedDebt.to, initialExpenses, initialSplits, paidSplitIds)
-  }, [selectedDebt, initialExpenses, initialSplits, paidSplitIds])
+    return getDebtBreakdown(selectedDebt.from, selectedDebt.to, initialExpenses, initialSplits, paidSplitIds, selectedDebt.currency, currency)
+  }, [selectedDebt, initialExpenses, initialSplits, paidSplitIds, currency])
 
   const unpaidBreakdown = useMemo(() => breakdown.filter((i) => !i.paidBySettlementId), [breakdown])
 
@@ -100,12 +95,12 @@ export function SettlePageContent({
     return initialMembers.find((m) => m.id === id)?.color ?? '#6366f1'
   }
 
-  function openPayment(debt: { from: string; to: string; amount: number }) {
+  function openPayment(debt: { from: string; to: string; amount: number; currency: string }) {
     setSelectedDebt(debt)
     setPayDate(format(new Date(), 'yyyy-MM-dd'))
     setUseCustom(false)
     setCustomAmount('')
-    const items = getDebtBreakdown(debt.from, debt.to, initialExpenses, initialSplits, paidSplitIds)
+    const items = getDebtBreakdown(debt.from, debt.to, initialExpenses, initialSplits, paidSplitIds, debt.currency, currency)
     setSelectedItems(new Set(items.filter((i) => !i.paidBySettlementId).map((i) => i.splitId)))
     setPaymentOpen(true)
   }
@@ -136,7 +131,7 @@ export function SettlePageContent({
         fromMemberId: selectedDebt.from,
         toMemberId: selectedDebt.to,
         amount: payAmount,
-        currency,
+        currency: selectedDebt.currency,
         date: payDate,
         coveredSplitIds: Array.from(selectedItems),
       })
@@ -152,31 +147,42 @@ export function SettlePageContent({
   return (
     <>
       <div className="space-y-6">
-        <div>
+        <div className="space-y-4">
           <SectionHeader title="Balances" />
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
-            {initialMembers.map((member) => {
-              const balance = Math.round((balances[member.id] ?? 0) * 100) / 100
-              return (
-                <Card key={member.id} className="border-border">
-                  <CardContent className="pt-3 pb-3 px-3">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div
-                        aria-hidden
-                        className="h-6 w-6 rounded-full shrink-0 ring-1 ring-white dark:ring-card"
-                        style={{ backgroundColor: member.color }}
-                      />
-                      <span className="font-medium text-sm truncate">{member.name}</span>
-                    </div>
-                    <span className={`text-base font-bold tabular-nums flex items-center gap-1 ${balance > 0 ? 'text-success' : balance < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {balance > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : balance < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
-                      {balance >= 0 ? '+' : ''}{formatCurrency(balance, currency)}
-                    </span>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+          {currencies.length === 0 ? (
+            <div className="mt-3">
+              <EmptyState icon={CheckCircle2} heading="All settled up!" body="No outstanding balances." />
+            </div>
+          ) : (
+            currencies.map((cur) => (
+              <div key={cur}>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{cur}</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {initialMembers.map((member) => {
+                    const balance = Math.round((balancesByCurrency[cur]?.[member.id] ?? 0) * 100) / 100
+                    return (
+                      <Card key={member.id} className="border-border">
+                        <CardContent className="pt-3 pb-3 px-3">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div
+                              aria-hidden
+                              className="h-6 w-6 rounded-full shrink-0 ring-1 ring-white dark:ring-card"
+                              style={{ backgroundColor: member.color }}
+                            />
+                            <span className="font-medium text-sm truncate">{member.name}</span>
+                          </div>
+                          <span className={`text-base font-bold tabular-nums flex items-center gap-1 ${balance > 0 ? 'text-success' : balance < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                            {balance > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : balance < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+                            {balance >= 0 ? '+' : ''}{formatCurrency(balance, cur)}
+                          </span>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         <div>
@@ -207,7 +213,7 @@ export function SettlePageContent({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-bold text-sm tabular-nums text-destructive">
-                        {formatCurrency(debt.amount, currency)}
+                        {formatCurrency(debt.amount, debt.currency)}
                       </span>
                       <Button size="sm" onClick={() => openPayment(debt)} className="h-7 text-xs px-3">
                         Settle
@@ -267,7 +273,7 @@ export function SettlePageContent({
                             </p>
                           </div>
                           <span className="text-sm font-bold tabular-nums shrink-0">
-                            {formatCurrency(item.shareAmount, currency)}
+                            {formatCurrency(item.shareAmount, selectedDebt.currency)}
                           </span>
                         </button>
                       )
@@ -301,7 +307,7 @@ export function SettlePageContent({
                     className="text-xs text-primary underline underline-offset-2"
                     onClick={() => { setUseCustom(false); setCustomAmount('') }}
                   >
-                    Reset to selected ({formatCurrency(defaultAmount, currency)})
+                    Reset to selected ({formatCurrency(defaultAmount, selectedDebt.currency)})
                   </button>
                 ) : null}
               </div>

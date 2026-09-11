@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { trips, members, expenses, expenseSplits, settlements, settlementItems, transfers, memberBalances } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { MemberDetail } from '@/components/members/MemberDetail'
-import { computeBalances, simplifyDebts } from '@/lib/settlement'
+import { computeBalances, simplifyDebtsByCurrency } from '@/lib/settlement'
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string; personId: string }> }) {
   const { id, personId: memberId } = await params
@@ -38,8 +38,8 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
       : Promise.resolve([]),
   ])
 
-  const balances = computeBalances(tripMembers, tripExpenses, tripExpenseSplits, tripSettlements, new Map(), tripTransfers)
-  const memberDebts = simplifyDebts(balances).filter(
+  const balances = computeBalances(tripMembers, tripExpenses, tripExpenseSplits, tripSettlements, tripTransfers, trip.currency)
+  const memberDebts = simplifyDebtsByCurrency(balances).filter(
     (d) => d.from === member.id || d.to === member.id
   )
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,11 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CurrencyField } from '@/components/ui/currency-field'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { createExpense, updateExpense } from '@/server/actions/expenses'
-import { fetchExchangeRate } from '@/lib/exchange-rate'
 import { CATEGORIES } from '@/lib/categories'
 import { formatCurrency } from '@/lib/format'
 import { format } from 'date-fns'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 
 const schema = z.object({
@@ -25,7 +24,6 @@ const schema = z.object({
   type: z.enum(['personal', 'shared']),
   date: z.string(),
   currency: z.string().length(3).optional(),
-  exchangeRate: z.number().positive().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -40,7 +38,6 @@ interface Expense {
   type: string
   date: string
   currency?: string | null
-  exchangeRate?: string | null
   splitMemberIds?: string[]
 }
 
@@ -64,7 +61,6 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
   )
   const [splitMode, setSplitMode] = useState<'equal' | 'custom'>('equal')
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({})
-  const [fetchingRate, startFetchingRate] = useTransition()
 
   const { register, handleSubmit, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -76,28 +72,13 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
       type: type,
       date: expense?.date ?? format(new Date(), 'yyyy-MM-dd'),
       currency: expense?.currency ?? undefined,
-      exchangeRate: expense?.exchangeRate ? parseFloat(expense.exchangeRate) : undefined,
     },
   })
 
   const selectedCurrency = useWatch({ control, name: 'currency' })
-  const showExchangeRate = selectedCurrency && selectedCurrency !== currency
 
   function handleCurrencyChange(val: string | null) {
-    if (!val || val === currency) {
-      setValue('currency', undefined)
-      setValue('exchangeRate', undefined)
-    } else {
-      setValue('currency', val)
-      startFetchingRate(async () => {
-        try {
-          const rate = await fetchExchangeRate(val, currency)
-          setValue('exchangeRate', rate)
-        } catch {
-          // leave field for manual entry
-        }
-      })
-    }
+    setValue('currency', !val || val === currency ? undefined : val)
   }
 
   const amount = useWatch({ control, name: 'amount' }) ?? 0
@@ -140,7 +121,6 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
       type,
       splits,
       currency: data.currency || undefined,
-      exchangeRate: data.currency && data.currency !== currency ? data.exchangeRate : undefined,
     }
 
     if (expense) {
@@ -170,47 +150,6 @@ export function ExpenseForm({ tripId, members, currency, expense, defaultPaidByI
           <CurrencyField id="expense-currency" value={selectedCurrency ?? currency} onValueChange={handleCurrencyChange} />
         </div>
       </div>
-
-      {showExchangeRate && (
-        <div className="flex gap-2 items-center">
-          <div className="flex-1">
-            <label htmlFor="expense-exchange-rate" className="text-xs text-muted-foreground">Rate: 1 {selectedCurrency} =</label>
-            <div className="flex gap-1 items-center mt-1">
-              <Input
-                id="expense-exchange-rate"
-                type="number"
-                step="0.000001"
-                placeholder="Exchange rate"
-                aria-describedby="expense-exchange-rate-currency"
-                {...register('exchangeRate', { valueAsNumber: true })}
-                className="flex-1"
-              />
-              <span id="expense-exchange-rate-currency" className="text-sm text-muted-foreground">{currency}</span>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="mt-5"
-            disabled={fetchingRate}
-            aria-label="Refresh exchange rate"
-            onClick={() => {
-              if (!selectedCurrency) return
-              startFetchingRate(async () => {
-                try {
-                  const rate = await fetchExchangeRate(selectedCurrency, currency)
-                  setValue('exchangeRate', rate)
-                } catch {
-                  // leave for manual entry
-                }
-              })
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 ${fetchingRate ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Select onValueChange={(v) => v && setValue('category', v as FormData['category'])} defaultValue={expense?.category ?? 'food'}>

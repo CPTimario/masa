@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ResponsiveFormModal } from '@/components/ui/responsive-form-modal'
 import { CATEGORIES } from '@/lib/categories'
 import { buildTransactionHistory } from '@/lib/wallet'
@@ -32,7 +33,7 @@ interface Props {
   settlementItems: SettlementItem[]
   transfers: Transfer[]
   balances: MemberBalance[]
-  memberDebts: { from: string; to: string; amount: number }[]
+  memberDebts: { from: string; to: string; amount: number; currency: string }[]
 }
 
 const TX_ICONS = {
@@ -48,44 +49,70 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
   const router = useRouter()
   const [expenseModalOpen, setExpenseModalOpen] = useState(false)
   const [transferModalOpen, setTransferModalOpen] = useState(false)
-  const [settleDebt, setSettleDebt] = useState<{ from: string; to: string; amount: number } | null>(null)
+  const [settleDebt, setSettleDebt] = useState<{ from: string; to: string; amount: number; currency: string } | null>(null)
   const [settleDate, setSettleDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [useCustom, setUseCustom] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
   const [settling, setSettling] = useState(false)
+  const expenseById = useMemo(() => new Map(expenses.map((e) => [e.id, e])), [expenses])
 
-  const consumed = useMemo(() => {
-    const personalSpent = expenses
+  const consumedByCurrency = useMemo(() => {
+    const map: Record<string, number> = {}
+    expenses
       .filter((e) => e.paidById === member.id && e.type === 'personal')
-      .reduce((sum, e) => sum + parseFloat(e.amount), 0)
-    const splitConsumed = expenseSplits
+      .forEach((e) => {
+        const currency = e.currency ?? trip.currency
+        map[currency] = (map[currency] ?? 0) + parseFloat(e.amount)
+      })
+    expenseSplits
       .filter((s) => s.memberId === member.id)
-      .reduce((sum, s) => sum + parseFloat(s.shareAmount), 0)
-    return personalSpent + splitConsumed
-  }, [expenses, expenseSplits, member.id])
+      .forEach((s) => {
+        const expense = expenseById.get(s.expenseId)
+        if (!expense) return
+        const currency = expense.currency ?? trip.currency
+        map[currency] = (map[currency] ?? 0) + parseFloat(s.shareAmount)
+      })
+    return map
+  }, [expenses, expenseSplits, expenseById, member.id, trip.currency])
+
+  const consumedCurrencies = useMemo(() => {
+    const entries = Object.entries(consumedByCurrency).filter(([, v]) => Math.abs(v) > 0.005)
+    return entries
+      .map(([currency]) => currency)
+      .sort((a, b) => (a === trip.currency ? -1 : b === trip.currency ? 1 : a.localeCompare(b)))
+  }, [consumedByCurrency, trip.currency])
+
+  const consumedCurrencyList = consumedCurrencies.length > 0 ? consumedCurrencies : [trip.currency]
+
+  const [chartCurrency, setChartCurrency] = useState(consumedCurrencyList[0])
 
   const budget = parseFloat(member.initialBudget || '0')
-  const budgetPct = budget > 0 ? Math.min(100, (consumed / budget) * 100) : 0
+  const consumedInTrip = consumedByCurrency[trip.currency] ?? 0
+  const budgetPct = budget > 0 ? Math.min(100, (consumedInTrip / budget) * 100) : 0
 
-  const totalOwed = useMemo(
-    () => memberDebts.filter((d) => d.from === member.id).reduce((sum, d) => sum + d.amount, 0),
-    [memberDebts, member.id]
-  )
-  const totalOwedToMe = useMemo(
-    () => memberDebts.filter((d) => d.to === member.id).reduce((sum, d) => sum + d.amount, 0),
-    [memberDebts, member.id]
-  )
+  // Net per currency: positive = owed to this member, negative = this member owes.
+  const netByCurrency = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const d of memberDebts) {
+      if (d.to === member.id) map[d.currency] = (map[d.currency] ?? 0) + d.amount
+      if (d.from === member.id) map[d.currency] = (map[d.currency] ?? 0) - d.amount
+    }
+    return Object.entries(map)
+      .filter(([, v]) => Math.abs(v) > 0.005)
+      .sort(([a], [b]) => (a === trip.currency ? -1 : b === trip.currency ? 1 : a.localeCompare(b)))
+  }, [memberDebts, member.id, trip.currency])
 
   const categoryData = useMemo(() => {
     const map: Record<string, number> = {}
-    expenses.filter((e) => e.paidById === member.id && e.type === 'personal').forEach((e) => {
-      map[e.category] = (map[e.category] ?? 0) + parseFloat(e.amount)
-    })
-    const expenseById = new Map(expenses.map((e) => [e.id, e]))
+    expenses
+      .filter((e) => e.paidById === member.id && e.type === 'personal' && (e.currency ?? trip.currency) === chartCurrency)
+      .forEach((e) => {
+        map[e.category] = (map[e.category] ?? 0) + parseFloat(e.amount)
+      })
     expenseSplits.filter((s) => s.memberId === member.id).forEach((s) => {
       const expense = expenseById.get(s.expenseId)
-      if (expense) {
+      if (expense && (expense.currency ?? trip.currency) === chartCurrency) {
         map[expense.category] = (map[expense.category] ?? 0) + parseFloat(s.shareAmount)
       }
     })
@@ -94,7 +121,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
       amount: Math.round(value * 100) / 100,
       color: CATEGORIES[key as keyof typeof CATEGORIES]?.color ?? '#6b7280',
     }))
-  }, [expenses, expenseSplits, member.id])
+  }, [expenses, expenseSplits, expenseById, member.id, chartCurrency, trip.currency])
 
   const memberByIdMap = useMemo(() => new Map(allMembers.map((m) => [m.id, m])), [allMembers])
 
@@ -105,8 +132,8 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
 
   const breakdown = useMemo(() => {
     if (!settleDebt) return []
-    return getDebtBreakdown(settleDebt.from, settleDebt.to, expenses, expenseSplits, paidSplitIds)
-  }, [settleDebt, expenses, expenseSplits, paidSplitIds])
+    return getDebtBreakdown(settleDebt.from, settleDebt.to, expenses, expenseSplits, paidSplitIds, settleDebt.currency, trip.currency)
+  }, [settleDebt, expenses, expenseSplits, paidSplitIds, trip.currency])
 
   const unpaidBreakdown = useMemo(() => breakdown.filter((i) => !i.paidBySettlementId), [breakdown])
 
@@ -121,12 +148,12 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
 
   const payAmount = useCustom ? parseFloat(customAmount || '0') : defaultAmount
 
-  function openSettleModal(debt: { from: string; to: string; amount: number }) {
+  function openSettleModal(debt: { from: string; to: string; amount: number; currency: string }) {
     setSettleDebt(debt)
     setSettleDate(format(new Date(), 'yyyy-MM-dd'))
     setUseCustom(false)
     setCustomAmount('')
-    const items = getDebtBreakdown(debt.from, debt.to, expenses, expenseSplits, paidSplitIds)
+    const items = getDebtBreakdown(debt.from, debt.to, expenses, expenseSplits, paidSplitIds, debt.currency, trip.currency)
     setSelectedItems(new Set(items.filter((i) => !i.paidBySettlementId).map((i) => i.splitId)))
   }
 
@@ -157,8 +184,6 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
   function handleSuccess() {
     router.refresh()
   }
-
-  const net = totalOwedToMe - totalOwed
 
   return (
     <>
@@ -204,22 +229,31 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
               <CardTitle className="text-xs text-muted-foreground">Consumed</CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-3">
-              <p className="text-sm md:text-lg font-bold truncate">{formatCurrency(consumed, trip.currency)}</p>
+              <div className="space-y-0.5">
+                {consumedCurrencyList.map((currency, idx) => (
+                  <p key={currency} className={`truncate font-bold ${idx === 0 ? 'text-sm md:text-lg' : 'text-xs text-muted-foreground'}`}>
+                    {formatCurrency(consumedByCurrency[currency] ?? 0, currency)}
+                  </p>
+                ))}
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-1 pt-3 px-3">
-              <CardTitle className="text-xs text-muted-foreground">
-                {net > 0 ? 'Owed to you' : net < 0 ? 'You owe' : 'Net Balance'}
-              </CardTitle>
+              <CardTitle className="text-xs text-muted-foreground">Net Balance</CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-3">
-              {net > 0
-                ? <p className="text-sm md:text-lg font-bold text-success truncate">{formatCurrency(net, trip.currency)}</p>
-                : net < 0
-                ? <p className="text-sm md:text-lg font-bold text-destructive truncate">{formatCurrency(Math.abs(net), trip.currency)}</p>
-                : <p className="text-sm font-bold text-muted-foreground">Settled up</p>
-              }
+              {netByCurrency.length === 0 ? (
+                <p className="text-sm font-bold text-muted-foreground">Settled up</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {netByCurrency.map(([cur, amount]) => (
+                    <p key={cur} className={`text-sm md:text-lg font-bold truncate ${amount > 0 ? 'text-success' : 'text-destructive'}`}>
+                      {amount > 0 ? '+' : '-'}{formatCurrency(Math.abs(amount), cur)}
+                    </p>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -267,6 +301,22 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
 
           {/* Transaction History tab */}
           <TabsContent value="history" className="space-y-4 mt-4">
+            {consumedCurrencies.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground font-medium">Currency</span>
+                <Select value={chartCurrency} onValueChange={(v) => v && setChartCurrency(v)}>
+                  <SelectTrigger size="sm" aria-label="Chart currency">
+                    <SelectValue>{chartCurrency}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {consumedCurrencies.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {categoryData.length > 0 && (
               <Card>
                 <CardHeader><CardTitle>Spending by Category</CardTitle></CardHeader>
@@ -274,9 +324,9 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                   <div className="h-[200px] md:h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={categoryData} layout="vertical">
-                        <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => formatCurrency(Number(v), trip.currency)} width={80} />
+                        <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => formatCurrency(Number(v), chartCurrency)} width={80} />
                         <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
-                        <Tooltip formatter={(v) => formatCurrency(Number(v), trip.currency)} />
+                        <Tooltip formatter={(v) => formatCurrency(Number(v), chartCurrency)} />
                         <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
                           {categoryData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                         </Bar>
@@ -343,7 +393,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                           <div key={i} className="flex items-center justify-between gap-3 py-1">
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{counterpart?.name ?? debt.to}</p>
-                              <p className="text-sm font-bold text-destructive">{formatCurrency(debt.amount, trip.currency)}</p>
+                              <p className="text-sm font-bold text-destructive">{formatCurrency(debt.amount, debt.currency)}</p>
                             </div>
                             <Button size="sm" variant="outline" className="shrink-0" onClick={() => openSettleModal(debt)}>
                               Pay
@@ -362,7 +412,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                           <div key={i} className="flex items-center justify-between gap-3 py-1">
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{counterpart?.name ?? debt.from}</p>
-                              <p className="text-sm font-bold text-success">{formatCurrency(debt.amount, trip.currency)}</p>
+                              <p className="text-sm font-bold text-success">{formatCurrency(debt.amount, debt.currency)}</p>
                             </div>
                             <Button size="sm" variant="outline" className="shrink-0" onClick={() => openSettleModal(debt)}>
                               Mark received
@@ -464,7 +514,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                             </p>
                           </div>
                           <span className="text-sm font-semibold tabular-nums shrink-0">
-                            {formatCurrency(item.shareAmount, trip.currency)}
+                            {formatCurrency(item.shareAmount, settleDebt.currency)}
                           </span>
                         </button>
                       )
@@ -490,7 +540,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                   </button>
                 ) : selectedTotal > 0 ? (
                   <button type="button" className="text-xs text-primary underline" onClick={() => { setUseCustom(false); setCustomAmount('') }}>
-                    Reset to selected ({formatCurrency(defaultAmount, trip.currency)})
+                    Reset to selected ({formatCurrency(defaultAmount, settleDebt.currency)})
                   </button>
                 ) : null}
               </div>
@@ -511,7 +561,7 @@ export function MemberDetail({ trip, member, allMembers, expenses, expenseSplits
                         fromMemberId: settleDebt.from,
                         toMemberId: settleDebt.to,
                         amount: payAmount,
-                        currency: trip.currency,
+                        currency: settleDebt.currency,
                         date: settleDate,
                         coveredSplitIds: Array.from(selectedItems),
                       })

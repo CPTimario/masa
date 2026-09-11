@@ -1,44 +1,46 @@
 import type { Member, Expense, ExpenseSplit, Settlement, Transfer } from '@/lib/db/schema'
 
+// Per-currency balances: { [currency]: { [memberId]: net } }. No conversion —
+// each expense/settlement/transfer stays in its own currency.
 export function computeBalances(
   members: Member[],
   expenses: Expense[],
   expenseSplits: ExpenseSplit[],
   settlements: Settlement[],
-  settlementExpenseMap: Map<string, Expense>,
-  transfers: Transfer[]
-): Record<string, number> {
-  const balances: Record<string, number> = {}
-  members.forEach((m) => { balances[m.id] = 0 })
+  transfers: Transfer[],
+  tripCurrency: string
+): Record<string, Record<string, number>> {
+  const balances: Record<string, Record<string, number>> = {}
+
+  function add(currency: string, memberId: string, delta: number) {
+    if (!balances[currency]) {
+      balances[currency] = {}
+      members.forEach((m) => { balances[currency][m.id] = 0 })
+    }
+    balances[currency][memberId] = (balances[currency][memberId] || 0) + delta
+  }
 
   for (const expense of expenses) {
     if (expense.type !== 'shared') continue
+    const currency = expense.currency ?? tripCurrency
     const rawAmount = parseFloat(String(expense.amount))
-    const rate = expense.exchangeRate ? parseFloat(String(expense.exchangeRate)) : 1
-    const amount = expense.currency ? rawAmount * rate : rawAmount
-    balances[expense.paidById] = (balances[expense.paidById] || 0) + amount
+    add(currency, expense.paidById, rawAmount)
     for (const split of expenseSplits.filter((s) => s.expenseId === expense.id)) {
       const splitAmount = parseFloat(String(split.shareAmount))
-      const converted = expense.currency ? splitAmount * rate : splitAmount
-      balances[split.memberId] = (balances[split.memberId] || 0) - converted
+      add(currency, split.memberId, -splitAmount)
     }
   }
 
   for (const settlement of settlements) {
-    const expense = settlementExpenseMap.get(settlement.id)
-    const rate = expense?.exchangeRate ? parseFloat(String(expense.exchangeRate)) : 1
     const amount = parseFloat(String(settlement.amount))
-    const converted = expense?.currency ? amount * rate : amount
-    balances[settlement.fromMemberId] = (balances[settlement.fromMemberId] || 0) + converted
-    balances[settlement.toMemberId] = (balances[settlement.toMemberId] || 0) - converted
+    add(settlement.currency, settlement.fromMemberId, amount)
+    add(settlement.currency, settlement.toMemberId, -amount)
   }
 
   for (const transfer of transfers) {
-    const rate = transfer.exchangeRateToTrip ? parseFloat(String(transfer.exchangeRateToTrip)) : 1
     const amount = parseFloat(String(transfer.amount))
-    const converted = amount * rate
-    balances[transfer.fromMemberId] = (balances[transfer.fromMemberId] || 0) + converted
-    balances[transfer.toMemberId] = (balances[transfer.toMemberId] || 0) - converted
+    add(transfer.currency, transfer.fromMemberId, amount)
+    add(transfer.currency, transfer.toMemberId, -amount)
   }
 
   return balances
@@ -60,9 +62,11 @@ export function getDebtBreakdown(
   expenses: Expense[],
   splits: ExpenseSplit[],
   paidSplitIds: Map<string, string>,
+  currency: string,
+  tripCurrency: string,
 ): DebtItem[] {
   return expenses
-    .filter((e) => e.type === 'shared' && e.paidById === toId)
+    .filter((e) => e.type === 'shared' && e.paidById === toId && (e.currency ?? tripCurrency) === currency)
     .flatMap((e) => {
       const split = splits.find((s) => s.expenseId === e.id && s.memberId === fromId)
       if (!split) return []
@@ -104,4 +108,18 @@ export function simplifyDebts(balances: Record<string, number>): { from: string;
   }
 
   return transactions
+}
+
+// Run the greedy debt simplification independently per currency so debts are
+// never cross-converted (THB settles THB, PHP settles PHP).
+export function simplifyDebtsByCurrency(
+  balancesByCurrency: Record<string, Record<string, number>>
+): { from: string; to: string; amount: number; currency: string }[] {
+  const result: { from: string; to: string; amount: number; currency: string }[] = []
+  for (const [currency, balances] of Object.entries(balancesByCurrency)) {
+    for (const t of simplifyDebts(balances)) {
+      result.push({ ...t, currency })
+    }
+  }
+  return result
 }
